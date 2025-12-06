@@ -15,7 +15,7 @@ OPAQUE is a secure asymmetric password-authenticated key exchange protocol that 
 
 ### From source
 
-You'll need Rust and Python 3.8+ installed.
+You'll need Rust and Python 3.12+ installed.
 
 ```bash
 # Install maturin (Rust/Python build tool)

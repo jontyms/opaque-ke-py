@@ -4,10 +4,10 @@ build-backend = "maturin"
 
 [project]
 name = "opaque-ke-py"
-version = "0.1.0"
+version = "0.1.1"
 description = "Python bindings for the OPAQUE-KE asymmetric password-authenticated key exchange protocol"
 readme = "README.md"
-requires-python = ">=3.8"
+requires-python = ">=3.12"
 license = {text = "MIT"}
 keywords = ["cryptography", "opaque", "pake", "authentication", "password"]
 classifiers = [

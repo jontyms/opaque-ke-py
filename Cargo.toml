@@ -1,6 +1,6 @@
 [package]
 name = "opaque-ke-py"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 
 [lib]
@@ -10,7 +10,6 @@ crate-type = ["cdylib"]
 [dependencies]
 opaque-ke = { version = "4.0.1", features = ["argon2", "ristretto255"] }
 rand = "0.8"
-generic-array = "0.14"
 sha2 = "0.10"
 
 [dependencies.pyo3]
