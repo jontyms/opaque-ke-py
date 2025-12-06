@@ -259,6 +259,8 @@ Server completes login. Raises `ValueError` if authentication fails.
 5. **Session Keys**: Use the established session keys for encrypting subsequent communications
 6. **Username Binding**: Usernames are cryptographically bound to registrations to prevent confusion attacks
 
+While the underlying cryptographic implementation from `opaque-ke` has been audited this wrapper has not been audited.
+
 ## Cipher Suite
 
 This wrapper uses the following cryptographic primitives:
@@ -301,6 +303,6 @@ This project wraps the [opaque-ke](https://github.com/facebook/opaque-ke) Rust i
 
 ## References
 
-- [OPAQUE RFC Draft](https://datatracker.ietf.org/doc/draft-irtf-cfrg-opaque/)
+- [OPAQUE RFC 9807](https://datatracker.ietf.org/doc/rfc9807/)
 - [OPAQUE Paper](https://eprint.iacr.org/2018/163)
 - [opaque-ke Rust crate](https://crates.io/crates/opaque-ke)
