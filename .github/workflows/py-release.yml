@@ -36,8 +36,8 @@ jobs:
           args: --release --out dist -m Cargo.toml -i ${{ matrix.python-version }}
       - name: Install built wheel - universal2
         run: |
-          pip install passes_rs_py --no-index --find-links dist --force-reinstall
-          python -c "import passes_rs_py"
+          pip install opaque-ke-py --no-index --find-links dist --force-reinstall
+          python -c "import opaque_ke_py"
       - name: Upload wheels
         uses: actions/upload-artifact@v4
         with:
@@ -67,8 +67,8 @@ jobs:
           args: --release --out dist -m Cargo.toml -i ${{ matrix.python-version }}
       - name: Install built wheel
         run: |
-          pip install passes_rs_py --no-index --find-links dist --force-reinstall
-          python -c "import passes_rs_py"
+          pip install opaque-ke-py --no-index --find-links dist --force-reinstall
+          python -c "import opaque_ke_py"
       - name: Upload wheels
         uses: actions/upload-artifact@v4
         with:
@@ -98,8 +98,8 @@ jobs:
           python-version: 3.12
       - name: Install built wheel
         run: |
-          pip install passes_rs_py --no-index --find-links dist --force-reinstall
-          python -c "import passes_rs_py"
+          pip install opaque-ke-py --no-index --find-links dist --force-reinstall
+          python -c "import opaque_ke_py"
       - name: Upload wheels
         uses: actions/upload-artifact@v4
         with:
@@ -133,8 +133,8 @@ jobs:
             python3 -m venv /tmp/venv
             . /tmp/venv/bin/activate
             pip install -U pip
-            pip install passes_rs_py --no-index --find-links /io/dist/ --force-reinstall
-            python -c "import passes_rs_py"
+            pip install opaque-ke-py --no-index --find-links /io/dist/ --force-reinstall
+            python -c "import opaque_ke_py"
       - name: Upload wheels
         uses: actions/upload-artifact@v4
         with:
@@ -155,8 +155,8 @@ jobs:
           args: --release --out dist -m Cargo.toml -i 3.12 3.13 3.14 3.13t 3.14t
       - name: Install built wheel
         run: |
-          pip install --no-index --find-links dist --force-reinstall passes_rs_py
-          python -c "import passes_rs_py"
+          pip install --no-index --find-links dist --force-reinstall opaque-ke-py
+          python -c "import opaque_ke_py"
       - name: Upload wheels
         uses: actions/upload-artifact@v4
         with:
@@ -184,8 +184,8 @@ jobs:
             python3 -m venv /tmp/venv
             . /tmp/venv/bin/activate
             pip install -U pip
-            pip install --no-index --find-links /io/dist/ --force-reinstall passes_rs_py
-            python -c "import passes_rs_py"
+            pip install --no-index --find-links /io/dist/ --force-reinstall opaque-ke-py
+            python -c "import opaque_ke_py"
       - name: Upload wheels
         uses: actions/upload-artifact@v4
         with:
