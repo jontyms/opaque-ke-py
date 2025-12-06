@@ -1,0 +1,98 @@
+name: GitHub Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  create-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build release binaries
+        run: |
+          cargo build --release --verbose
+          cargo doc --no-deps
+
+      - name: Create release archive
+        run: |
+          mkdir -p release-assets
+          tar -czf release-assets/neopasses-source-${{ github.ref_name }}.tar.gz \
+            --exclude=target \
+            --exclude=.git \
+            --exclude=.github \
+            --exclude=.pytest_cache \
+            --exclude=.venv \
+            --exclude=dist \
+            .
+
+          # Copy documentation
+          cp -r target/doc release-assets/
+          tar -czf release-assets/neopasses-docs-${{ github.ref_name }}.tar.gz -C target doc
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          # Extract version from tag
+          VERSION=${GITHUB_REF#refs/tags/v}
+
+          # Create a simple changelog from git commits since last tag
+          PREVIOUS_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+
+          if [ -n "$PREVIOUS_TAG" ]; then
+            echo "## Changes since $PREVIOUS_TAG" > CHANGELOG.md
+            echo "" >> CHANGELOG.md
+            git log --pretty=format:"- %s (%h)" $PREVIOUS_TAG..HEAD >> CHANGELOG.md
+          else
+            echo "## Version $VERSION" > CHANGELOG.md
+            echo "" >> CHANGELOG.md
+            echo "Initial release" >> CHANGELOG.md
+          fi
+
+          echo "" >> CHANGELOG.md
+          echo "## Installation" >> CHANGELOG.md
+          echo "" >> CHANGELOG.md
+          echo "### Rust" >> CHANGELOG.md
+          echo '```toml' >> CHANGELOG.md
+          echo "[dependencies]" >> CHANGELOG.md
+          echo "neopasses = \"$VERSION\"" >> CHANGELOG.md
+          echo '```' >> CHANGELOG.md
+          echo "" >> CHANGELOG.md
+          echo "### Python" >> CHANGELOG.md
+          echo '```bash' >> CHANGELOG.md
+          echo "pip install passes-rs-py==$VERSION" >> CHANGELOG.md
+          echo '```' >> CHANGELOG.md
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Release ${{ github.ref_name }}
+          body_path: CHANGELOG.md
+          draft: false
+          prerelease: ${{ contains(github.ref_name, 'alpha') || contains(github.ref_name, 'beta') || contains(github.ref_name, 'rc') }}
+          files: |
+            release-assets/neopasses-source-${{ github.ref_name }}.tar.gz
+            release-assets/neopasses-docs-${{ github.ref_name }}.tar.gz
+            Cargo.toml
+            README.md
+            LICENSE
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update release description
+        run: |
+          echo "✅ GitHub release created successfully!"
+          echo "📦 Rust crate will be published by rust-release.yaml"
+          echo "🐍 Python package will be published by py-release.yml"
+          echo "🔗 Release URL: https://github.com/${{ github.repository }}/releases/tag/${{ github.ref_name }}"

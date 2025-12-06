@@ -1,0 +1,19 @@
+[package]
+name = "opaque-ke-py"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "opaque_ke_py"
+crate-type = ["cdylib"]
+
+[dependencies]
+opaque-ke = { version = "4.0.1", features = ["argon2", "ristretto255"] }
+rand = "0.8"
+generic-array = "0.14"
+sha2 = "0.10"
+
+[dependencies.pyo3]
+version = "0.27.0"
+# "abi3-py38" tells pyo3 (and maturin) to build using the stable ABI with minimum Python version 3.8
+features = ["abi3-py38"]
