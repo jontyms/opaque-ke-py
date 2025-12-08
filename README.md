@@ -252,14 +252,157 @@ Server completes login. Raises `ValueError` if authentication fails.
 
 ## Security Considerations
 
-1. **Transport Security**: OPAQUE should be used over a secure transport layer (e.g., TLS) to prevent MITM attacks
-2. **Server Setup Storage**: Store the server setup securely and never expose it
-3. **Password File Storage**: Store password files securely in your database
-4. **State Management**: Keep client/server states private during multi-step protocols
-5. **Session Keys**: Use the established session keys for encrypting subsequent communications
-6. **Username Binding**: Usernames are cryptographically bound to registrations to prevent confusion attacks
+### ⚠️ CRITICAL: Python Memory Limitations
 
-While the underlying cryptographic implementation from `opaque-ke` has been audited this wrapper has not been audited.
+**Python bytes are immutable and cannot be reliably zeroized from memory.** This is a fundamental limitation of Python's memory management model.
+
+**What this means:**
+- Passwords passed to this library may persist in Python's heap memory until garbage collection
+- They may be written to swap files or appear in core dumps
+- Memory scraping malware could potentially extract passwords from process memory
+
+
+**When it's appropriate:**
+- ✅ Standard web applications with reasonable security requirements
+- ✅ Internal tools with trusted environments
+- ✅ Prototyping and development
+- ✅ Applications where TLS + standard practices provide sufficient security
+
+### General Security Best Practices
+
+1. **Transport Security**: ALWAYS use TLS 1.3+ to prevent man-in-the-middle attacks
+2. **Rate Limiting**: Implement rate limiting to prevent online guessing attacks (see below)
+3. **Server Setup Storage**: Encrypt server setup before storing (contains private key)
+4. **Password File Storage**: Store password files securely in your database (they're safe to store)
+5. **State Management**: Keep client/server states in memory only, never log or persist them
+6. **Session Key Comparison**: Use `constant_time_compare()` for comparing sensitive values
+7. **Username Binding**: Usernames are cryptographically bound to registrations
+
+### Rate Limiting (REQUIRED)
+
+OPAQUE protects against offline dictionary attacks, but you **MUST** implement rate limiting to prevent online guessing:
+
+```python
+from time import time
+from collections import defaultdict
+
+# Simple rate limiting example
+failed_attempts = defaultdict(list)  # username -> [timestamps]
+
+def check_rate_limit(username: str, max_attempts: int = 5, window_seconds: int = 900):
+    """Allow max_attempts failures per window_seconds (default: 5 per 15 min)"""
+    now = time()
+    # Remove old attempts outside the window
+    failed_attempts[username] = [
+        ts for ts in failed_attempts[username]
+        if now - ts < window_seconds
+    ]
+
+    if len(failed_attempts[username]) >= max_attempts:
+        raise Exception(f"Rate limit exceeded. Try again later.")
+
+def record_failed_login(username: str):
+    """Record a failed login attempt"""
+    failed_attempts[username].append(time())
+
+# Use before login
+check_rate_limit(username)
+try:
+    # ... perform login ...
+    pass
+except ValueError:
+    record_failed_login(username)
+    raise
+```
+
+**Recommended mitigations:**
+- **Rate limiting**: 5 failed attempts per 15 minutes per username
+- **IP-based limits**: 20 failed attempts per hour per IP address
+- **Progressive delays**: Exponential backoff after repeated failures
+- **Account lockout**: Temporary lockout after 10 failures in 1 hour
+- **Monitoring**: Alert on suspicious patterns (distributed attacks, enumeration attempts)
+
+### Server Setup Key Storage
+
+The server setup contains the server's **private key**. You MUST encrypt it before storage:
+
+```python
+from cryptography.fernet import Fernet
+import os
+
+# Generate encryption key (store in environment variable or KMS)
+storage_key = os.environ.get('SERVER_SETUP_ENCRYPTION_KEY').encode()
+cipher = Fernet(storage_key)
+
+# Encrypt before storage
+server_setup = opaque_ke_py.server_setup()
+plaintext = server_setup.to_bytes()
+encrypted = cipher.encrypt(plaintext)
+
+# Store encrypted bytes to disk/database
+with open('server_setup.enc', 'wb') as f:
+    f.write(encrypted)
+
+# Later: decrypt when loading
+with open('server_setup.enc', 'rb') as f:
+    encrypted = f.read()
+plaintext = cipher.decrypt(encrypted)
+server_setup = opaque_ke_py.ServerSetupData.from_bytes(plaintext)
+```
+
+**⚠️ NEVER:**
+- Log the server setup or its private key
+- Store server setup in plaintext
+- Transmit server setup over the network
+- Include server setup in backups without encryption
+
+### State Security
+
+States returned by login/registration functions contain sensitive cryptographic material:
+
+**You MUST:**
+- ✅ Keep states in memory only (never persist to disk/database)
+- ✅ Never reuse states across different login/registration attempts
+- ✅ Never log or serialize states
+- ✅ Discard states immediately after the protocol completes
+
+**States are single-use only.** Reusing a state violates the protocol's security guarantees.
+
+### Constant-Time Comparisons
+
+When comparing session keys or other sensitive values, use the provided constant-time comparison:
+
+```python
+import opaque_ke_py
+
+# ❌ WRONG: Timing attack vulnerable
+if client_session_key == server_session_key:
+    print("Keys match!")
+
+# ✅ CORRECT: Constant-time comparison
+if opaque_ke_py.constant_time_compare(client_session_key, server_session_key):
+    print("Keys match!")
+```
+
+### Error Handling
+
+This library uses generic error messages to prevent information leakage:
+- `"Authentication failed"` - Login/registration cryptographic operation failed
+- `"Invalid message format"` - Deserialization or format error
+- `"Registration failed"` - Registration protocol error
+- `"input too large"` - Input exceeds 1 MB limit
+
+**Never expose these errors directly to end users.** Instead, show user-friendly messages like:
+- "Invalid username or password"
+- "Registration failed, please try again"
+- "An error occurred, please contact support"
+
+### Audit Status
+
+- ✅ **Underlying Rust library (`opaque-ke` v4.0.1)**: Audited by NCC Group for WhatsApp (2021)
+- ⚠️ **This Python wrapper**: Not independently audited
+
+The underlying cryptographic implementation is solid and has been professionally reviewed. The Python binding layer has been designed following security best practices but has not undergone formal security audit.
 
 ## Cipher Suite
 

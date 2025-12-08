@@ -98,9 +98,9 @@ def main():
         f"   ✓ Server finished login (session_key: {server_session_key.hex()[:32]}...)\n"
     )
 
-    # Verify session keys match
+    # Verify session keys match using constant-time comparison
     print("4. Verification")
-    if client_session_key == server_session_key:
+    if opaque_ke_py.constant_time_compare(client_session_key, server_session_key):
         print("   ✓ SUCCESS! Session keys match!")
         print(f"   Session key: {client_session_key.hex()}")
     else:

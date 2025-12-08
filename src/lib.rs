@@ -11,6 +11,7 @@ use pyo3::prelude::*;
 use pyo3::types::PyBytes;
 use rand::rngs::OsRng;
 use sha2::Sha512;
+use subtle::ConstantTimeEq;
 
 // Default cipher suite using Ristretto255 and Sha512
 struct DefaultCipherSuite;
@@ -19,6 +20,20 @@ impl CipherSuite for DefaultCipherSuite {
     type OprfCs = opaque_ke::Ristretto255;
     type KeyExchange = opaque_ke::TripleDh<opaque_ke::Ristretto255, Sha512>;
     type Ksf = Argon2<'static>;
+}
+
+// Maximum size for input messages (1 MB)
+const MAX_INPUT_SIZE: usize = 1024 * 1024;
+
+/// Validate input size to prevent DoS attacks
+fn validate_input_size(data: &[u8], context: &str) -> PyResult<()> {
+    if data.is_empty() {
+        return Err(PyValueError::new_err(format!("{}: input is empty", context)));
+    }
+    if data.len() > MAX_INPUT_SIZE {
+        return Err(PyValueError::new_err(format!("{}: input too large", context)));
+    }
+    Ok(())
 }
 
 /// Server setup containing the server's keypair
@@ -45,7 +60,7 @@ impl ServerSetupData {
     #[staticmethod]
     fn from_bytes(data: &[u8]) -> PyResult<Self> {
         let inner = ServerSetup::<DefaultCipherSuite>::deserialize(data)
-            .map_err(|e| PyValueError::new_err(format!("Deserialization failed: {:?}", e)))?;
+            .map_err(|_| PyValueError::new_err("Invalid server setup data"))?;
         Ok(Self { inner })
     }
 }
@@ -211,7 +226,7 @@ fn server_setup() -> PyResult<ServerSetupData> {
 fn client_registration_start(password: &[u8]) -> PyResult<ClientRegistrationStartData> {
     let mut rng = OsRng;
     let result = ClientRegistration::<DefaultCipherSuite>::start(&mut rng, password)
-        .map_err(|e| PyValueError::new_err(format!("Registration start failed: {:?}", e)))?;
+        .map_err(|_| PyValueError::new_err("Registration failed"))?;
 
     Ok(ClientRegistrationStartData {
         message: result.message.serialize().to_vec(),
@@ -226,14 +241,15 @@ fn server_registration_start(
     registration_request: &[u8],
     username: &[u8],
 ) -> PyResult<ServerRegistrationStartData> {
+    validate_input_size(registration_request, "registration_request")?;
+    validate_input_size(username, "username")?;
+
     let request = RegistrationRequest::deserialize(registration_request)
-        .map_err(|e| PyValueError::new_err(format!("Failed to deserialize request: {:?}", e)))?;
+        .map_err(|_| PyValueError::new_err("Invalid message format"))?;
 
     let result =
         ServerRegistration::<DefaultCipherSuite>::start(&server_setup.inner, request, username)
-            .map_err(|e| {
-                PyValueError::new_err(format!("Server registration start failed: {:?}", e))
-            })?;
+            .map_err(|_| PyValueError::new_err("Registration failed"))?;
 
     Ok(ServerRegistrationStartData {
         message: result.message.serialize().to_vec(),
@@ -247,12 +263,15 @@ fn client_registration_finish(
     client_state: &[u8],
     registration_response: &[u8],
 ) -> PyResult<ClientRegistrationFinishData> {
+    validate_input_size(client_state, "client_state")?;
+    validate_input_size(registration_response, "registration_response")?;
+
     let mut rng = OsRng;
     let state = ClientRegistration::<DefaultCipherSuite>::deserialize(client_state)
-        .map_err(|e| PyValueError::new_err(format!("Failed to deserialize state: {:?}", e)))?;
+        .map_err(|_| PyValueError::new_err("Invalid message format"))?;
 
     let response = opaque_ke::RegistrationResponse::deserialize(registration_response)
-        .map_err(|e| PyValueError::new_err(format!("Failed to deserialize response: {:?}", e)))?;
+        .map_err(|_| PyValueError::new_err("Invalid message format"))?;
 
     let result = state
         .finish(
@@ -261,9 +280,7 @@ fn client_registration_finish(
             response,
             ClientRegistrationFinishParameters::default(),
         )
-        .map_err(|e| {
-            PyValueError::new_err(format!("Client registration finish failed: {:?}", e))
-        })?;
+        .map_err(|_| PyValueError::new_err("Registration failed"))?;
 
     Ok(ClientRegistrationFinishData {
         message: result.message.serialize().to_vec(),
@@ -276,8 +293,10 @@ fn client_registration_finish(
 fn server_registration_finish(
     registration_upload: &[u8],
 ) -> PyResult<ServerRegistrationFinishData> {
+    validate_input_size(registration_upload, "registration_upload")?;
+
     let upload = RegistrationUpload::<DefaultCipherSuite>::deserialize(registration_upload)
-        .map_err(|e| PyValueError::new_err(format!("Failed to deserialize upload: {:?}", e)))?;
+        .map_err(|_| PyValueError::new_err("Invalid message format"))?;
 
     let password_file = ServerRegistration::<DefaultCipherSuite>::finish(upload);
 
@@ -291,7 +310,7 @@ fn server_registration_finish(
 fn client_login_start(password: &[u8]) -> PyResult<ClientLoginStartData> {
     let mut rng = OsRng;
     let result = ClientLogin::<DefaultCipherSuite>::start(&mut rng, password)
-        .map_err(|e| PyValueError::new_err(format!("Client login start failed: {:?}", e)))?;
+        .map_err(|_| PyValueError::new_err("Authentication failed"))?;
 
     Ok(ClientLoginStartData {
         message: result.message.serialize().to_vec(),
@@ -307,14 +326,16 @@ fn server_login_start(
     credential_request: &[u8],
     username: &[u8],
 ) -> PyResult<ServerLoginStartData> {
+    validate_input_size(password_file, "password_file")?;
+    validate_input_size(credential_request, "credential_request")?;
+    validate_input_size(username, "username")?;
+
     let mut rng = OsRng;
     let password_file = ServerRegistration::<DefaultCipherSuite>::deserialize(password_file)
-        .map_err(|e| {
-            PyValueError::new_err(format!("Failed to deserialize password file: {:?}", e))
-        })?;
+        .map_err(|_| PyValueError::new_err("Invalid message format"))?;
 
     let request = CredentialRequest::deserialize(credential_request)
-        .map_err(|e| PyValueError::new_err(format!("Failed to deserialize request: {:?}", e)))?;
+        .map_err(|_| PyValueError::new_err("Invalid message format"))?;
 
     let result = ServerLogin::start(
         &mut rng,
@@ -324,7 +345,7 @@ fn server_login_start(
         username,
         ServerLoginParameters::default(),
     )
-    .map_err(|e| PyValueError::new_err(format!("Server login start failed: {:?}", e)))?;
+    .map_err(|_| PyValueError::new_err("Authentication failed"))?;
 
     Ok(ServerLoginStartData {
         message: result.message.serialize().to_vec(),
@@ -339,12 +360,15 @@ fn client_login_finish(
     client_state: &[u8],
     credential_response: &[u8],
 ) -> PyResult<ClientLoginFinishData> {
+    validate_input_size(client_state, "client_state")?;
+    validate_input_size(credential_response, "credential_response")?;
+
     let mut rng = OsRng;
     let state = ClientLogin::<DefaultCipherSuite>::deserialize(client_state)
-        .map_err(|e| PyValueError::new_err(format!("Failed to deserialize state: {:?}", e)))?;
+        .map_err(|_| PyValueError::new_err("Invalid message format"))?;
 
     let response = CredentialResponse::deserialize(credential_response)
-        .map_err(|e| PyValueError::new_err(format!("Failed to deserialize response: {:?}", e)))?;
+        .map_err(|_| PyValueError::new_err("Invalid message format"))?;
 
     let result = state
         .finish(
@@ -353,7 +377,7 @@ fn client_login_finish(
             response,
             ClientLoginFinishParameters::default(),
         )
-        .map_err(|e| PyValueError::new_err(format!("Client login finish failed: {:?}", e)))?;
+        .map_err(|_| PyValueError::new_err("Authentication failed"))?;
 
     Ok(ClientLoginFinishData {
         message: result.message.serialize().to_vec(),
@@ -368,21 +392,38 @@ fn server_login_finish(
     server_state: &[u8],
     credential_finalization: &[u8],
 ) -> PyResult<ServerLoginFinishData> {
-    let state = ServerLogin::<DefaultCipherSuite>::deserialize(server_state)
-        .map_err(|e| PyValueError::new_err(format!("Failed to deserialize state: {:?}", e)))?;
+    validate_input_size(server_state, "server_state")?;
+    validate_input_size(credential_finalization, "credential_finalization")?;
 
-    let finalization =
-        CredentialFinalization::deserialize(credential_finalization).map_err(|e| {
-            PyValueError::new_err(format!("Failed to deserialize finalization: {:?}", e))
-        })?;
+    let state = ServerLogin::<DefaultCipherSuite>::deserialize(server_state)
+        .map_err(|_| PyValueError::new_err("Invalid message format"))?;
+
+    let finalization = CredentialFinalization::deserialize(credential_finalization)
+        .map_err(|_| PyValueError::new_err("Invalid message format"))?;
 
     let result = state
         .finish(finalization, ServerLoginParameters::default())
-        .map_err(|e| PyValueError::new_err(format!("Server login finish failed: {:?}", e)))?;
+        .map_err(|_| PyValueError::new_err("Authentication failed"))?;
 
     Ok(ServerLoginFinishData {
         session_key: result.session_key.to_vec(),
     })
+}
+
+/// Constant-time comparison of two byte strings
+///
+/// This function compares two byte arrays in constant time to prevent
+/// timing attacks. Use this when comparing session keys, export keys,
+/// or other sensitive values.
+///
+/// Returns True if the byte strings are equal, False otherwise.
+/// Returns False if the lengths differ.
+#[pyfunction]
+fn constant_time_compare(a: &[u8], b: &[u8]) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    a.ct_eq(b).into()
 }
 
 #[pymodule]
@@ -406,6 +447,7 @@ fn opaque_ke_py(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(server_login_start, m)?)?;
     m.add_function(wrap_pyfunction!(client_login_finish, m)?)?;
     m.add_function(wrap_pyfunction!(server_login_finish, m)?)?;
+    m.add_function(wrap_pyfunction!(constant_time_compare, m)?)?;
 
     Ok(())
 }
